@@ -1,3 +1,7 @@
+// Name: Juan Cota
+// Date: 10/22/2024
+// RedID: 827272362
+
 #include <iostream>
 #include <sstream>
 #include <vector>
