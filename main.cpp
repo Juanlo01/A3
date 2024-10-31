@@ -174,7 +174,7 @@ int main(int argc, char **argv) {
             hexnum(address & ((1U << shiftAry[levelCount - 1]) - 1));
         } else if (outputMode == "va2pa_atc_ptwalk") {
             bool pthit = !tlbhit; // Assuming a page table hit if not a TLB hit (needs actual logic)
-            log_va2pa_ATC_PTwalk(address, pfn, tlbhit, pthit); // Call your logging function here
+            log_va2pa_ATC_PTwalk(address, pfn, tlbhit, pthit); 
         }
 
         numOfAccesses++;
