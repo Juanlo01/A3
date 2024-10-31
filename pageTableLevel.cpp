@@ -1,7 +1,3 @@
-// Name: Juan Cota
-// Date: 10/22/2024
-// RedID: 827272362
-
 #include <iostream>
 #include <vector>
 #include "pageTableLevel.h"
@@ -52,7 +48,18 @@ unsigned int extractPageNumberFromAddress(unsigned int address, unsigned int mas
 }
 
 void insert_vpn2pfn(PageTable* pageTable, unsigned int virtualAddress, unsigned int frame) {
-    // Implementation here
+    Level* currentLevel = pageTable->rootNodePtr;
+    unsigned int offset;
+    for (unsigned int level = 0; level < pageTable->levelCount; ++level) {
+        offset = (virtualAddress & pageTable->bitMaskAry[level]) >> pageTable->shiftAry[level];
+        if (currentLevel->nextLevelPtr[offset] == nullptr) {
+            currentLevel->nextLevelPtr[offset] = new Level(level + 1, pageTable);
+        }
+        currentLevel = currentLevel->nextLevelPtr[offset];
+    }
+    if (currentLevel->map == nullptr) {
+        currentLevel->map = new Map(virtualAddress, frame); // Use the constructor with parameters
+    }
 }
 
 int lookup_TLB(unsigned int vpn, unsigned int& pfn) {
@@ -82,4 +89,17 @@ void update_LRU() {
     for (int i = 0; i < tlb.size(); i++) {
         tlb[i].lruCounter++;
     }
+}
+
+Map* lookup_vpn2pfn(PageTable* pageTable, unsigned int virtualAddress) {
+    Level* currentLevel = pageTable->rootNodePtr;
+    unsigned int offset;
+    for (unsigned int level = 0; level < pageTable->levelCount; ++level) {
+        offset = (virtualAddress & pageTable->bitMaskAry[level]) >> pageTable->shiftAry[level];
+        if (currentLevel->nextLevelPtr[offset] == nullptr) {
+            return nullptr; // Mapping doesn't exist
+        }
+        currentLevel = currentLevel->nextLevelPtr[offset];
+    }
+    return currentLevel->map;
 }

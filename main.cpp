@@ -10,16 +10,30 @@
 #include "pageTableLevel.h"
 #include "log.h"
 #include "tracereader.h"
-
 #define BADEXIT 1
 
 using namespace std;
 
 // Declare the TLB vector as extern
 extern vector<TLB> tlb;
+unsigned int frameCounter = 0; // Initialize frame counter
+unsigned int pageTableHits = 0;
+unsigned int tlbHits = 0;
+unsigned int pageSize = 0;
 
 void printUsage() {
     cerr << "Usage: ./pagingwithatc [-n N] [-c N] [-o mode] <trace_file> <level_bits>" << endl;
+}
+
+unsigned long countPageTableEntries(Level* level) {
+    if (!level) return 0;
+    unsigned long count = 1; // Count this level
+    for (unsigned int i = 0; i < level->pageTablePtr->entryCount[level->depth]; ++i) {
+        if (level->nextLevelPtr[i]) {
+            count += countPageTableEntries(level->nextLevelPtr[i]);
+        }
+    }
+    return count;
 }
 
 int main(int argc, char **argv) {
@@ -70,7 +84,6 @@ int main(int argc, char **argv) {
     }
 
     vector<unsigned int> levelBits;
-
     // Parse level bits from remaining arguments
     while (optind < argc) {
         unsigned int bit;
@@ -105,6 +118,8 @@ int main(int argc, char **argv) {
         entryCount[i] = 1U << levelBits[i];
     }
 
+    pageSize = 1 << shift; // Calculate page size based on remaining bits
+
     PageTable pageTable(levelCount, bitMaskAry.data(), shiftAry.data(), entryCount.data());
 
     if (outputMode == "bitmasks") {
@@ -118,22 +133,37 @@ int main(int argc, char **argv) {
     vector<unsigned int> pageIndices(levelCount);
     while ((maxAccesses == 0 || numOfAccesses < maxAccesses) && NextAddress(traceFile, &traceAddr)) {
         unsigned int address = traceAddr.addr;
-        unsigned int vpn = address >> 12; // Example shift for VPN extraction
+        unsigned int vpn = address >> shiftAry[levelCount - 1]; // Use the offset bits
         unsigned int pfn;
-
         bool tlbhit = false;
+
         if (tlbSize > 0) {
             if (lookup_TLB(vpn, pfn)) {
                 tlbhit = true; // TLB hit
+                tlbHits++;
             } else {
                 // TLB miss, walk page table...
-                pfn = pageTable.recordPageAccess(address);
+                Map* mapEntry = lookup_vpn2pfn(&pageTable, address);
+                if (mapEntry) {
+                    pfn = mapEntry->pfn;
+                    pageTableHits++;
+                } else {
+                    insert_vpn2pfn(&pageTable, address, frameCounter++);
+                    pfn = frameCounter - 1;
+                }
                 insert_TLB(vpn, pfn); // Insert into TLB
             }
             update_LRU();
         } else {
             // No TLB, directly walk page table
-            pfn = pageTable.recordPageAccess(address);
+            Map* mapEntry = lookup_vpn2pfn(&pageTable, address);
+            if (mapEntry) {
+                pfn = mapEntry->pfn;
+                pageTableHits++;
+            } else {
+                insert_vpn2pfn(&pageTable, address, frameCounter++);
+                pfn = frameCounter - 1;
+            }
         }
 
         if (outputMode == "va2pa") {
@@ -151,9 +181,8 @@ int main(int argc, char **argv) {
     }
 
     if (outputMode == "summary") {
-        // Implement the TLB simulation and log_summary
-        // This should be completed based on your specific simulation logic.
-        log_summary(4096, 0, 0, numOfAccesses, 0, 0); // Placeholder values, replace with your actual stats
+        unsigned long totalPageTableEntries = countPageTableEntries(pageTable.rootNodePtr);
+        log_summary(pageSize, tlbHits, pageTableHits, numOfAccesses, frameCounter, totalPageTableEntries);
     }
 
     fclose(traceFile);
