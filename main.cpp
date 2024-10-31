@@ -27,23 +27,16 @@ void printUsage() {
 
 unsigned long countPageTableEntries(Level* level) {
     if (!level) return 0;
-    unsigned long count = 0;
+    unsigned long count = 1; // Count the current level
 
-    // Iterate through each entry of this level
     for (unsigned int i = 0; i < level->pageTablePtr->entryCount[level->depth]; ++i) {
         if (level->nextLevelPtr[i]) {
-            // Recursively count entries for the next level
             count += countPageTableEntries(level->nextLevelPtr[i]);
-        } else {
-            // Even if next level is null, we have an entry in the current level
-            count++;
         }
     }
 
     return count;
 }
-
-
 
 int main(int argc, char **argv) {
     int opt;
@@ -145,44 +138,55 @@ int main(int argc, char **argv) {
         unsigned int vpn = address >> shiftAry[levelCount - 1]; // Use the offset bits
         unsigned int pfn;
         bool tlbhit = false;
+        bool pthit = false;
 
+        // TLB Lookup
         if (tlbSize > 0) {
             if (lookup_TLB(vpn, pfn)) {
                 tlbhit = true; // TLB hit
-                tlbHits++;
+                pthit = true; // Assume page table hit if TLB hit
             } else {
-                // TLB miss, walk page table...
-                Map* mapEntry = lookup_vpn2pfn(&pageTable, address);
+                // TLB miss, perform page table lookup
+                Map* mapEntry = lookup_vpn2pfn(&pageTable, vpn);
                 if (mapEntry) {
                     pfn = mapEntry->pfn;
-                    pageTableHits++;
+                    pthit = true; // Page table hit
                 } else {
-                    insert_vpn2pfn(&pageTable, address, frameCounter++);
-                    pfn = frameCounter - 1;
+                    insert_vpn2pfn(&pageTable, vpn, frameCounter++);
+                    mapEntry = lookup_vpn2pfn(&pageTable, vpn);
+                    pfn = mapEntry->pfn;
+                    pthit = false; // Page table miss
                 }
                 insert_TLB(vpn, pfn); // Insert into TLB
             }
-            update_LRU();
+            update_LRU(); // Update TLB LRU
         } else {
             // No TLB, directly walk page table
-            Map* mapEntry = lookup_vpn2pfn(&pageTable, address);
+            Map* mapEntry = lookup_vpn2pfn(&pageTable, vpn);
             if (mapEntry) {
                 pfn = mapEntry->pfn;
-                pageTableHits++;
+                pthit = true; // Page table hit
             } else {
-                insert_vpn2pfn(&pageTable, address, frameCounter++);
-                pfn = frameCounter - 1;
+                insert_vpn2pfn(&pageTable, vpn, frameCounter++);
+                mapEntry = lookup_vpn2pfn(&pageTable, vpn);
+                pfn = mapEntry->pfn;
+                pthit = false; // Page table miss
             }
         }
 
+        // Compute the physical address
+        unsigned int offset = address & ((1U << shiftAry[levelCount - 1]) - 1);
+        unsigned int physicalAddress = (pfn << shiftAry[levelCount - 1]) | offset;
+
+        // Log the virtual to physical address translation
         if (outputMode == "va2pa") {
-            log_virtualAddr2physicalAddr(address, pfn);
+            log_virtualAddr2physicalAddr(address, physicalAddress);
         } else if (outputMode == "vpn2pfn") {
             p2AddrTr traceAddr;
     unsigned int numOfAccesses = 0;
     while ((maxAccesses == 0 || numOfAccesses < maxAccesses) && NextAddress(traceFile, &traceAddr)) {
         unsigned int address = traceAddr.addr;
-        unsigned int vpn = address >> 13; // Adjust shift for correct VPN calculation
+        unsigned int vpn = address >> shiftAry[levelCount - 1]; // Adjust for correct VPN extraction
 
         // Insert and lookup to get the correct frame mapping
         Map* mapEntry = lookup_vpn2pfn(&pageTable, vpn);
@@ -193,29 +197,27 @@ int main(int argc, char **argv) {
 
         // Extract page indices for each level
         for (unsigned int i = 0; i < levelCount; i++) {
-            pageIndices[i] = (vpn & bitMaskAry[i]) >> shiftAry[i];
+            pageIndices[i] = (address & bitMaskAry[i]) >> shiftAry[i];
         }
 
         // Log the page mapping
         log_pagemapping(levelCount, pageIndices.data(), mapEntry->pfn);
         numOfAccesses++;
+    
     }
-        
         } else if (outputMode == "offset") {
-            hexnum(address & ((1U << shiftAry[levelCount - 1]) - 1));
+            hexnum(offset);
         } else if (outputMode == "va2pa_atc_ptwalk") {
-            bool pthit = !tlbhit; // Assuming a page table hit if not a TLB hit (needs actual logic)
-            log_va2pa_ATC_PTwalk(address, pfn, tlbhit, pthit); 
+            log_va2pa_ATC_PTwalk(address, physicalAddress, tlbhit, pthit);
         }
 
         numOfAccesses++;
     }
 
     if (outputMode == "summary") {
-    unsigned long totalPageTableEntries = countPageTableEntries(pageTable.rootNodePtr);
-    log_summary(pageSize, tlbHits, pageTableHits, numOfAccesses, frameCounter, totalPageTableEntries);
+        unsigned long totalPageTableEntries = countPageTableEntries(pageTable.rootNodePtr);
+        log_summary(pageSize, tlbHits, pageTableHits, numOfAccesses, frameCounter, totalPageTableEntries);
     }
-
 
     fclose(traceFile);
     return 0;

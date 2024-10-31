@@ -61,8 +61,13 @@ void insert_vpn2pfn(PageTable* pageTable, unsigned int virtualAddress, unsigned 
         }
         currentLevel = currentLevel->nextLevelPtr[offset];
     }
-    currentLevel->map = new Map(virtualAddress, frame); // Ensure mapping is created or updated
+    if (currentLevel->map == nullptr) {
+        currentLevel->map = new Map(virtualAddress, frame);
+    } else {
+        currentLevel->map->pfn = frame;
+    }
 }
+
 
 
 
@@ -108,6 +113,3 @@ Map* lookup_vpn2pfn(PageTable* pageTable, unsigned int virtualAddress) {
     }
     return currentLevel->map;
 }
-
-
-
