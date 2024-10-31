@@ -27,14 +27,23 @@ void printUsage() {
 
 unsigned long countPageTableEntries(Level* level) {
     if (!level) return 0;
-    unsigned long count = 1; // Count this level
+    unsigned long count = 0;
+
+    // Iterate through each entry of this level
     for (unsigned int i = 0; i < level->pageTablePtr->entryCount[level->depth]; ++i) {
         if (level->nextLevelPtr[i]) {
+            // Recursively count entries for the next level
             count += countPageTableEntries(level->nextLevelPtr[i]);
+        } else {
+            // Even if next level is null, we have an entry in the current level
+            count++;
         }
     }
+
     return count;
 }
+
+
 
 int main(int argc, char **argv) {
     int opt;
@@ -169,7 +178,29 @@ int main(int argc, char **argv) {
         if (outputMode == "va2pa") {
             log_virtualAddr2physicalAddr(address, pfn);
         } else if (outputMode == "vpn2pfn") {
-            log_pagemapping(levelCount, pageIndices.data(), pfn);
+            p2AddrTr traceAddr;
+    unsigned int numOfAccesses = 0;
+    while ((maxAccesses == 0 || numOfAccesses < maxAccesses) && NextAddress(traceFile, &traceAddr)) {
+        unsigned int address = traceAddr.addr;
+        unsigned int vpn = address >> 13; // Adjust shift for correct VPN calculation
+
+        // Insert and lookup to get the correct frame mapping
+        Map* mapEntry = lookup_vpn2pfn(&pageTable, vpn);
+        if (!mapEntry) {
+            insert_vpn2pfn(&pageTable, vpn, frameCounter++);
+            mapEntry = lookup_vpn2pfn(&pageTable, vpn);
+        }
+
+        // Extract page indices for each level
+        for (unsigned int i = 0; i < levelCount; i++) {
+            pageIndices[i] = (vpn & bitMaskAry[i]) >> shiftAry[i];
+        }
+
+        // Log the page mapping
+        log_pagemapping(levelCount, pageIndices.data(), mapEntry->pfn);
+        numOfAccesses++;
+    }
+        
         } else if (outputMode == "offset") {
             hexnum(address & ((1U << shiftAry[levelCount - 1]) - 1));
         } else if (outputMode == "va2pa_atc_ptwalk") {
@@ -181,9 +212,10 @@ int main(int argc, char **argv) {
     }
 
     if (outputMode == "summary") {
-        unsigned long totalPageTableEntries = countPageTableEntries(pageTable.rootNodePtr);
-        log_summary(pageSize, tlbHits, pageTableHits, numOfAccesses, frameCounter, totalPageTableEntries);
+    unsigned long totalPageTableEntries = countPageTableEntries(pageTable.rootNodePtr);
+    log_summary(pageSize, tlbHits, pageTableHits, numOfAccesses, frameCounter, totalPageTableEntries);
     }
+
 
     fclose(traceFile);
     return 0;

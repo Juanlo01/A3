@@ -61,10 +61,11 @@ void insert_vpn2pfn(PageTable* pageTable, unsigned int virtualAddress, unsigned 
         }
         currentLevel = currentLevel->nextLevelPtr[offset];
     }
-    if (currentLevel->map == nullptr) {
-        currentLevel->map = new Map(virtualAddress, frame); // Use the constructor with parameters
-    }
+    currentLevel->map = new Map(virtualAddress, frame); // Ensure mapping is created or updated
 }
+
+
+
 
 int lookup_TLB(unsigned int vpn, unsigned int& pfn) {
     for (int i = 0; i < tlb.size(); i++) {
@@ -107,3 +108,6 @@ Map* lookup_vpn2pfn(PageTable* pageTable, unsigned int virtualAddress) {
     }
     return currentLevel->map;
 }
+
+
+
