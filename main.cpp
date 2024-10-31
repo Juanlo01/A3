@@ -183,28 +183,32 @@ int main(int argc, char **argv) {
             log_virtualAddr2physicalAddr(address, physicalAddress);
         } else if (outputMode == "vpn2pfn") {
             p2AddrTr traceAddr;
-    unsigned int numOfAccesses = 0;
-    while ((maxAccesses == 0 || numOfAccesses < maxAccesses) && NextAddress(traceFile, &traceAddr)) {
-        unsigned int address = traceAddr.addr;
-        unsigned int vpn = address >> shiftAry[levelCount - 1]; // Adjust for correct VPN extraction
+            unsigned int numOfAccesses = 0;
 
-        // Insert and lookup to get the correct frame mapping
-        Map* mapEntry = lookup_vpn2pfn(&pageTable, vpn);
-        if (!mapEntry) {
-            insert_vpn2pfn(&pageTable, vpn, frameCounter++);
-            mapEntry = lookup_vpn2pfn(&pageTable, vpn);
-        }
+            while ((numOfAccesses < maxAccesses) && NextAddress(traceFile, &traceAddr)) {
+                unsigned int address = traceAddr.addr;
+                unsigned int vpn = address >> shiftAry[levelCount - 1]; // Adjust for correct VPN extraction
 
-        // Extract page indices for each level
-        for (unsigned int i = 0; i < levelCount; i++) {
-            pageIndices[i] = (address & bitMaskAry[i]) >> shiftAry[i];
-        }
+                // Insert and lookup to get the correct frame mapping
+                Map* mapEntry = lookup_vpn2pfn(&pageTable, vpn);
+                if (!mapEntry) {
+                    insert_vpn2pfn(&pageTable, vpn, frameCounter++);
+                    mapEntry = lookup_vpn2pfn(&pageTable, vpn);
+                }
 
-        // Log the page mapping
-        log_pagemapping(levelCount, pageIndices.data(), mapEntry->pfn);
-        numOfAccesses++;
-    
-    }
+                // Extract page indices for each level
+                for (unsigned int i = 0; i < levelCount; i++) {
+                    pageIndices[i] = (address & bitMaskAry[i]) >> shiftAry[i];
+                }
+
+                // Log the page mapping
+                log_pagemapping(levelCount, pageIndices.data(), mapEntry->pfn);
+
+                numOfAccesses++;
+                if (numOfAccesses >= maxAccesses) {
+                    break;
+                }
+            }
         } else if (outputMode == "offset") {
             hexnum(offset);
         } else if (outputMode == "va2pa_atc_ptwalk") {
